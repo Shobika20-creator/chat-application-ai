@@ -1,0 +1,15 @@
+# Ignore large model folder
+NlpModel/HarassmentModel/
+
+# Node
+node_modules
+.env
+
+# Python
+venv
+__pycache__
+*.pyc
+
+# Build
+dist
+build
