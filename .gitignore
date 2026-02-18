@@ -1,5 +1,6 @@
 # Ignore large model folder
 NlpModel/HarassmentModel/
+NlpModel/client_secrets.json
 
 # Node
 node_modules
