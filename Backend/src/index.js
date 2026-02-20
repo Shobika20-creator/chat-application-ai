@@ -5,14 +5,15 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import Message from './models/message.model.js';
 import axios from "axios";
-import nodemailer from "nodemailer"; // ✅ NEW
+import nodemailer from "nodemailer";
 
-const MONGO_URI = 'mongodb+srv://shobikasaravanan2004:avcSd5pxJFmEledZ@cluster.tpzr8dr.mongodb.net/cHAT_DB?retryWrites=true&w=majority&appName=Cluster';
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URL;
 
-// ✅ ADMIN EMAIL CONFIG
-const ADMIN_EMAIL = "shobiatwork@gmail.com"; // 🔁 Change this
-const EMAIL_USER = "shobikasaravanan2004@gmail.com"; // 🔁 Change this
-const EMAIL_PASS = "auzcsmqfuxgsxapy";   // 🔁 Use Gmail App Password
+// ✅ ADMIN EMAIL CONFIG (from Render environment variables)
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
 
 // ✅ CREATE EMAIL TRANSPORTER
 const transporter = nodemailer.createTransport({
@@ -33,19 +34,31 @@ mongoose.connect(MONGO_URI)
 const app = express();
 const server = http.createServer(app);
 
+// ✅ CORS (allow frontend + localhost)
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: [
+    "http://localhost:5173",
+    "https://chat-application-ai-mh0x.onrender.com"
+  ],
   credentials: true,
 }));
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: [
+      "http://localhost:5173",
+      "https://chat-application-ai-mh0x.onrender.com"
+    ],
     methods: ['GET', 'POST'],
   },
 });
 
 app.use(express.json());
+
+// ✅ Health Check Route (Fixes "Cannot GET /")
+app.get("/", (req, res) => {
+  res.status(200).send("Backend is live on Render 🚀");
+});
 
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
@@ -59,18 +72,16 @@ io.on("connection", (socket) => {
     console.log(`Message from ${sender} to ${receiver}: ${content}`);
 
     try {
-      // 1️⃣ Save message (UNCHANGED)
       const newMessage = new Message({ sender, receiver, content });
       await newMessage.save();
 
-      // 2️⃣ Emit message (UNCHANGED)
       socket.broadcast.emit('receiveMessage', { sender, receiver, content });
 
-      // 3️⃣ Harassment Detection (UNCHANGED)
       const VICTIM_EMAIL = "a@gmail.com";
 
       if (receiver === VICTIM_EMAIL) {
 
+        // ⚠️ CHANGE THIS LATER to your NLP Render URL
         const response = await axios.post("http://localhost:8000/predict", {
           text: content
         });
@@ -102,7 +113,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ NEW: HANDLE VICTIM RESPONSE
   socket.on("victimResponse", async (data) => {
     console.log("Victim Response Received:", data);
 
@@ -119,19 +129,15 @@ Victim: ${data.victim}
 Predator: ${data.predator}
 Time: ${data.timestamp}
 
-The victim has confirmed that she is being harassed.
+The victim has confirmed harassment.
 Please take immediate action.
           `,
         });
 
         console.log("✅ Notification sent to admin");
 
-        // Optional: reset harassment count after confirmation
         harassmentCount[data.victim] = 0;
-
       }
-
-      // If response is NO → Do nothing (as requested)
 
     } catch (error) {
       console.error("Email sending error:", error.message);
@@ -148,9 +154,8 @@ Please take immediate action.
       }
     }
   });
-
 });
 
-server.listen(5000, () => {
-  console.log('Server running on http://localhost:5000');
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
