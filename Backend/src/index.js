@@ -47,7 +47,8 @@ const io = new Server(server, {
   cors: {
     origin: [
       "http://localhost:5173",
-      "https://chat-application-ai-mh0x.onrender.com"
+      "https://chat-application-ai-mh0x.onrender.com",
+      "*"
     ],
     methods: ['GET', 'POST'],
   },
