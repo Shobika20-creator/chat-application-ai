@@ -10,12 +10,15 @@ import nodemailer from "nodemailer";
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URL;
 
-// ✅ ADMIN EMAIL CONFIG (from Render environment variables)
+// ✅ Hugging Face Config
+const HF_TOKEN = process.env.HF_TOKEN;
+const HF_MODEL = process.env.HF_MODEL;
+
+// ✅ ADMIN EMAIL CONFIG
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 
-// ✅ CREATE EMAIL TRANSPORTER
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -34,7 +37,6 @@ mongoose.connect(MONGO_URI)
 const app = express();
 const server = http.createServer(app);
 
-// ✅ CORS (allow frontend + localhost)
 app.use(cors({
   origin: [
     "http://localhost:5173",
@@ -56,17 +58,37 @@ const io = new Server(server, {
 
 app.use(express.json());
 
-// ✅ Health Check Route (Fixes "Cannot GET /")
 app.get("/", (req, res) => {
   res.status(200).send("Backend is live on Render 🚀");
 });
+
+// ✅ Hugging Face Prediction Function
+async function predictHarassment(text) {
+  try {
+    const response = await axios.post(
+      `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+      { inputs: text },
+      {
+        headers: {
+          Authorization: `Bearer ${HF_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    return response.data;
+
+  } catch (error) {
+    console.error("HF Error:", error.response?.data || error.message);
+    return null;
+  }
+}
 
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
   socket.on("registerUser", (email) => {
     onlineUsers[email] = socket.id;
-    console.log(`${email} registered with socket ${socket.id}`);
   });
 
   socket.on('sendMessage', async ({ sender, receiver, content }) => {
@@ -82,18 +104,19 @@ io.on("connection", (socket) => {
 
       if (receiver === VICTIM_EMAIL) {
 
-        // ⚠️ CHANGE THIS LATER to your NLP Render URL
-        const response = await axios.post("http://localhost:8000/predict", {
-          text: content
-        });
+        // ✅ CALL HUGGING FACE
+        const predictionResult = await predictHarassment(content);
 
-        const prediction = response.data.prediction;
-        console.log("Harassment Prediction:", prediction);
+        if (!predictionResult) return;
 
-        if (prediction === "Predator") {
+        console.log("HF Raw Response:", predictionResult);
+
+        // ⚠️ Adjust label check according to your model
+        const topPrediction = predictionResult[0][0];
+
+        if (topPrediction.label === "Predator") {
 
           harassmentCount[receiver] = (harassmentCount[receiver] || 0) + 1;
-          console.log(`Harassment count for ${receiver}:`, harassmentCount[receiver]);
 
           if (harassmentCount[receiver] === 5) {
 
@@ -115,10 +138,8 @@ io.on("connection", (socket) => {
   });
 
   socket.on("victimResponse", async (data) => {
-    console.log("Victim Response Received:", data);
 
     try {
-
       if (data.response === "YES") {
 
         await transporter.sendMail({
@@ -135,8 +156,6 @@ Please take immediate action.
           `,
         });
 
-        console.log("✅ Notification sent to admin");
-
         harassmentCount[data.victim] = 0;
       }
 
@@ -146,8 +165,6 @@ Please take immediate action.
   });
 
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-
     for (const email in onlineUsers) {
       if (onlineUsers[email] === socket.id) {
         delete onlineUsers[email];
