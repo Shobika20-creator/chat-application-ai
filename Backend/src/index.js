@@ -5,26 +5,12 @@ import cors from 'cors';
 import mongoose from 'mongoose';
 import Message from './models/message.model.js';
 import axios from "axios";
-import nodemailer from "nodemailer";
 
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URL;
-
-// ✅ EMAIL CONFIG (from Render Environment Variables)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
-// ✅ CREATE TRANSPORTER
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // important
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
-});
 const harassmentCount = {};
 const onlineUsers = {};
 
@@ -61,7 +47,6 @@ app.get("/", (req, res) => {
   res.status(200).send("Backend is live on Render 🚀");
 });
 
-
 // ✅ Hugging Face Prediction Function
 async function predictHarassment(text) {
   try {
@@ -78,7 +63,6 @@ async function predictHarassment(text) {
     return null;
   }
 }
-
 
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
@@ -106,7 +90,6 @@ io.on("connection", (socket) => {
 
         const prediction = predictionResult.prediction;
 
-        // ✅ Support both number and string (safety)
         const isHarassment =
           prediction === 1 ||
           prediction === "1" ||
@@ -148,8 +131,7 @@ io.on("connection", (socket) => {
     }
   });
 
-
-  // ✅ HANDLE VICTIM RESPONSE
+  // ✅ HANDLE VICTIM RESPONSE (Resend Email API)
   socket.on("victimResponse", async (data) => {
 
     console.log("Victim Response Received:", data);
@@ -158,35 +140,42 @@ io.on("connection", (socket) => {
 
       if (data.response === "YES") {
 
-        console.log("Attempting to send email...");
+        console.log("Sending email via Resend...");
 
-        await transporter.sendMail({
-          from: EMAIL_USER,
-          to: ADMIN_EMAIL,
-          subject: "🚨 Harassment Confirmed by Victim",
-          text: `
-Victim: ${data.victim}
-Predator: ${data.predator}
-Time: ${data.timestamp}
+        await axios.post(
+          "https://api.resend.com/emails",
+          {
+            from: "onboarding@resend.dev",
+            to: ADMIN_EMAIL,
+            subject: "🚨 Harassment Confirmed by Victim",
+            html: `
+              <h2>Harassment Alert</h2>
+              <p><strong>Victim:</strong> ${data.victim}</p>
+              <p><strong>Predator:</strong> ${data.predator}</p>
+              <p><strong>Time:</strong> ${data.timestamp}</p>
+              <p>The victim has confirmed harassment.</p>
+            `,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${RESEND_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
-The victim has confirmed harassment.
-Please take immediate action.
-          `,
-        });
+        console.log("✅ Email successfully sent using Resend");
 
-        console.log("✅ Email successfully sent to admin");
-
-        // Reset counter after confirmation
         harassmentCount[data.victim] = 0;
+
       } else {
         console.log("Victim clicked NO — no email sent");
       }
 
     } catch (error) {
-      console.error("Email sending error FULL:", error);
+      console.error("Resend Email Error:", error.response?.data || error.message);
     }
   });
-
 
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
