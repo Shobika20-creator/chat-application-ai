@@ -10,10 +10,6 @@ import nodemailer from "nodemailer";
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URL;
 
-// ✅ Hugging Face Config
-const HF_TOKEN = process.env.HF_TOKEN;
-const HF_MODEL = process.env.HF_MODEL;
-
 // ✅ ADMIN EMAIL CONFIG
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const EMAIL_USER = process.env.EMAIL_USER;
@@ -62,30 +58,25 @@ app.get("/", (req, res) => {
   res.status(200).send("Backend is live on Render 🚀");
 });
 
-// ✅ Hugging Face Prediction Function
+
+// ✅ NEW: Hugging Face Space API Call
 async function predictHarassment(text) {
   try {
-
     const response = await axios.post(
-      "https://api-inference.huggingface.co/models/shobika04/harassment-nlp-model",
-      { inputs: text },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.HF_TOKEN}`,
-          "Content-Type": "application/json"
-        }
-      }
+      "https://shobika04-harassment-api.hf.space/predict",
+      { text: text }
     );
 
-    console.log("HF Raw Response:", response.data);
-
+    console.log("HF Prediction:", response.data);
     return response.data;
 
   } catch (error) {
-    console.error("HF Error:", error.response?.data || error.message);
+    console.error("HF API Error:", error.message);
     return null;
   }
 }
+
+
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
@@ -106,19 +97,23 @@ io.on("connection", (socket) => {
 
       if (receiver === VICTIM_EMAIL) {
 
-        // ✅ CALL HUGGING FACE
+        // ✅ Call FastAPI Space
         const predictionResult = await predictHarassment(content);
 
         if (!predictionResult) return;
 
-        console.log("HF Raw Response:", predictionResult);
+        // Our FastAPI returns:
+        // { prediction: 0 or 1, confidence: 0.xx }
 
-        // ⚠️ Adjust label check according to your model
-        const topPrediction = predictionResult[0][0];
+        const prediction = predictionResult.prediction;
 
-        if (topPrediction.label === "Predator") {
+        // ⚠️ Adjust this if your label mapping differs
+        // Assuming: 1 = Harassment / Predator
+        if (prediction === 1) {
 
           harassmentCount[receiver] = (harassmentCount[receiver] || 0) + 1;
+
+          console.log(`Harassment count for ${receiver}:`, harassmentCount[receiver]);
 
           if (harassmentCount[receiver] === 5) {
 

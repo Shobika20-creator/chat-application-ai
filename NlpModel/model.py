@@ -67,3 +67,4 @@ def predict(req: MessageRequest):
         "prediction": prediction,
         "confidence": confidence
     }
+
