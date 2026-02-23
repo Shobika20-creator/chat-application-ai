@@ -66,7 +66,7 @@ app.get("/", (req, res) => {
 async function predictHarassment(text) {
   try {
     const response = await axios.post(
-      `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+      `https://router.huggingface.co/hf-inference/models/${HF_MODEL}`,
       { inputs: text },
       {
         headers: {
