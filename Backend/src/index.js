@@ -10,12 +10,12 @@ import nodemailer from "nodemailer";
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URL;
 
-// ✅ ADMIN EMAIL CONFIG (Render Environment Variables)
+// ✅ EMAIL CONFIG (from Render Environment Variables)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 
-// ✅ EMAIL TRANSPORTER
+// ✅ CREATE TRANSPORTER
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -27,6 +27,7 @@ const transporter = nodemailer.createTransport({
 const harassmentCount = {};
 const onlineUsers = {};
 
+// ✅ CONNECT MONGODB
 mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected'))
   .catch((err) => console.error('MongoDB connection error:', err));
@@ -60,7 +61,7 @@ app.get("/", (req, res) => {
 });
 
 
-// ✅ Hugging Face Space Prediction Function
+// ✅ Hugging Face Prediction Function
 async function predictHarassment(text) {
   try {
     const response = await axios.post(
@@ -72,14 +73,13 @@ async function predictHarassment(text) {
     return response.data;
 
   } catch (error) {
-    console.error("HF API Error:", error.message);
+    console.error("HF API Error:", error.response?.data || error.message);
     return null;
   }
 }
 
 
 io.on("connection", (socket) => {
-
   console.log(`Socket connected: ${socket.id}`);
 
   socket.on("registerUser", (email) => {
@@ -88,49 +88,55 @@ io.on("connection", (socket) => {
   });
 
   socket.on('sendMessage', async ({ sender, receiver, content }) => {
-
     console.log(`Message from ${sender} to ${receiver}: ${content}`);
 
     try {
-      // 1️⃣ Save message
       const newMessage = new Message({ sender, receiver, content });
       await newMessage.save();
 
-      // 2️⃣ Emit message
       socket.broadcast.emit('receiveMessage', { sender, receiver, content });
 
-      // 3️⃣ Harassment Detection
       const VICTIM_EMAIL = "a@gmail.com";
 
       if (receiver === VICTIM_EMAIL) {
 
         const predictionResult = await predictHarassment(content);
-
         if (!predictionResult) return;
 
         const prediction = predictionResult.prediction;
 
-        // ✅ IMPORTANT: HF returns 1 for harassment
-        if (prediction === 1) {
+        // ✅ Support both number and string (safety)
+        const isHarassment =
+          prediction === 1 ||
+          prediction === "1" ||
+          prediction === "Predator";
 
-          harassmentCount[receiver] = (harassmentCount[receiver] || 0) + 1;
+        if (isHarassment) {
 
-          console.log(`Harassment count for ${receiver}: ${harassmentCount[receiver]}`);
+          harassmentCount[receiver] =
+            (harassmentCount[receiver] || 0) + 1;
+
+          console.log(
+            `Harassment count for ${receiver}:`,
+            harassmentCount[receiver]
+          );
 
           if (harassmentCount[receiver] === 5) {
 
-            console.log("⚠️ 5 harassment messages reached — sending alert to victim");
+            console.log("🚨 5 Harassment messages detected");
 
             const victimSocket = onlineUsers[VICTIM_EMAIL];
 
             if (victimSocket) {
               io.to(victimSocket).emit("harassmentAlert", {
-                message: "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
-                count: harassmentCount[receiver],
-                predator: sender,
-                victim: receiver,
-                timestamp: new Date().toISOString()
+                message:
+                  "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
+                count: harassmentCount[receiver]
               });
+
+              console.log("Alert sent to victim");
+            } else {
+              console.log("Victim not online");
             }
           }
         }
@@ -142,7 +148,7 @@ io.on("connection", (socket) => {
   });
 
 
-  // ✅ HANDLE VICTIM RESPONSE (EMAIL ONLY AFTER YES)
+  // ✅ HANDLE VICTIM RESPONSE
   socket.on("victimResponse", async (data) => {
 
     console.log("Victim Response Received:", data);
@@ -151,7 +157,7 @@ io.on("connection", (socket) => {
 
       if (data.response === "YES") {
 
-        console.log("Attempting to send email to admin...");
+        console.log("Attempting to send email...");
 
         await transporter.sendMail({
           from: EMAIL_USER,
@@ -167,20 +173,21 @@ Please take immediate action.
           `,
         });
 
-        console.log("✅ Notification sent to admin successfully");
+        console.log("✅ Email successfully sent to admin");
 
-        // Reset count after confirmation
+        // Reset counter after confirmation
         harassmentCount[data.victim] = 0;
+      } else {
+        console.log("Victim clicked NO — no email sent");
       }
 
     } catch (error) {
-      console.error("❌ Email sending error FULL:", error);
+      console.error("Email sending error FULL:", error);
     }
   });
 
 
   socket.on('disconnect', () => {
-
     console.log(`User disconnected: ${socket.id}`);
 
     for (const email in onlineUsers) {
@@ -191,7 +198,6 @@ Please take immediate action.
     }
   });
 });
-
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
