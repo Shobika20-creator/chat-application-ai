@@ -17,13 +17,14 @@ const EMAIL_PASS = process.env.EMAIL_PASS;
 
 // ✅ CREATE TRANSPORTER
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // important
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS,
   },
 });
-
 const harassmentCount = {};
 const onlineUsers = {};
 
