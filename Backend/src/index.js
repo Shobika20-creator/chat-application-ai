@@ -10,11 +10,12 @@ import nodemailer from "nodemailer";
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URL;
 
-// ✅ ADMIN EMAIL CONFIG
+// ✅ ADMIN EMAIL CONFIG (Render Environment Variables)
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 
+// ✅ EMAIL TRANSPORTER
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -59,7 +60,7 @@ app.get("/", (req, res) => {
 });
 
 
-// ✅ NEW: Hugging Face Space API Call
+// ✅ Hugging Face Space Prediction Function
 async function predictHarassment(text) {
   try {
     const response = await axios.post(
@@ -78,51 +79,57 @@ async function predictHarassment(text) {
 
 
 io.on("connection", (socket) => {
+
   console.log(`Socket connected: ${socket.id}`);
 
   socket.on("registerUser", (email) => {
     onlineUsers[email] = socket.id;
+    console.log(`${email} registered with socket ${socket.id}`);
   });
 
   socket.on('sendMessage', async ({ sender, receiver, content }) => {
+
     console.log(`Message from ${sender} to ${receiver}: ${content}`);
 
     try {
+      // 1️⃣ Save message
       const newMessage = new Message({ sender, receiver, content });
       await newMessage.save();
 
+      // 2️⃣ Emit message
       socket.broadcast.emit('receiveMessage', { sender, receiver, content });
 
+      // 3️⃣ Harassment Detection
       const VICTIM_EMAIL = "a@gmail.com";
 
       if (receiver === VICTIM_EMAIL) {
 
-        // ✅ Call FastAPI Space
         const predictionResult = await predictHarassment(content);
 
         if (!predictionResult) return;
 
-        // Our FastAPI returns:
-        // { prediction: 0 or 1, confidence: 0.xx }
-
         const prediction = predictionResult.prediction;
 
-        // ⚠️ Adjust this if your label mapping differs
-        // Assuming: 1 = Harassment / Predator
+        // ✅ IMPORTANT: HF returns 1 for harassment
         if (prediction === 1) {
 
           harassmentCount[receiver] = (harassmentCount[receiver] || 0) + 1;
 
-          console.log(`Harassment count for ${receiver}:`, harassmentCount[receiver]);
+          console.log(`Harassment count for ${receiver}: ${harassmentCount[receiver]}`);
 
           if (harassmentCount[receiver] === 5) {
+
+            console.log("⚠️ 5 harassment messages reached — sending alert to victim");
 
             const victimSocket = onlineUsers[VICTIM_EMAIL];
 
             if (victimSocket) {
               io.to(victimSocket).emit("harassmentAlert", {
                 message: "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
-                count: harassmentCount[receiver]
+                count: harassmentCount[receiver],
+                predator: sender,
+                victim: receiver,
+                timestamp: new Date().toISOString()
               });
             }
           }
@@ -130,14 +137,21 @@ io.on("connection", (socket) => {
       }
 
     } catch (error) {
-      console.error("Error:", error.message);
+      console.error("Message Handling Error:", error.message);
     }
   });
 
+
+  // ✅ HANDLE VICTIM RESPONSE (EMAIL ONLY AFTER YES)
   socket.on("victimResponse", async (data) => {
 
+    console.log("Victim Response Received:", data);
+
     try {
+
       if (data.response === "YES") {
+
+        console.log("Attempting to send email to admin...");
 
         await transporter.sendMail({
           from: EMAIL_USER,
@@ -153,15 +167,22 @@ Please take immediate action.
           `,
         });
 
+        console.log("✅ Notification sent to admin successfully");
+
+        // Reset count after confirmation
         harassmentCount[data.victim] = 0;
       }
 
     } catch (error) {
-      console.error("Email sending error:", error.message);
+      console.error("❌ Email sending error FULL:", error);
     }
   });
 
+
   socket.on('disconnect', () => {
+
+    console.log(`User disconnected: ${socket.id}`);
+
     for (const email in onlineUsers) {
       if (onlineUsers[email] === socket.id) {
         delete onlineUsers[email];
@@ -170,6 +191,7 @@ Please take immediate action.
     }
   });
 });
+
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
