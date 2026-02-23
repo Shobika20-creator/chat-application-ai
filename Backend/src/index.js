@@ -65,19 +65,19 @@ app.get("/", (req, res) => {
 // ✅ Hugging Face Prediction Function
 async function predictHarassment(text) {
   try {
-    const modelUrl = `https://router.huggingface.co/hf-inference/models/${process.env.HF_MODEL}`;
 
     const response = await axios.post(
-      modelUrl
-      ,
+      "https://api-inference.huggingface.co/models/shobika04/harassment-nlp-model",
       { inputs: text },
       {
         headers: {
-          Authorization: `Bearer ${HF_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+          Authorization: `Bearer ${process.env.HF_TOKEN}`,
+          "Content-Type": "application/json"
+        }
       }
     );
+
+    console.log("HF Raw Response:", response.data);
 
     return response.data;
 
@@ -86,7 +86,6 @@ async function predictHarassment(text) {
     return null;
   }
 }
-
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
