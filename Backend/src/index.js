@@ -14,6 +14,16 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 const harassmentCount = {};
 const onlineUsers = {};
 
+// ✅ NEW: Monitoring Control State
+const monitoringState = {};
+// structure:
+// monitoringState[victim][predator] = {
+//   active: true/false,
+//   stoppedAt: timestamp
+// }
+
+const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+
 // ✅ CONNECT MONGODB
 mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB connected'))
@@ -85,6 +95,26 @@ io.on("connection", (socket) => {
 
       if (receiver === VICTIM_EMAIL) {
 
+        // ✅ CHECK MONITORING STATE
+        if (
+          monitoringState[receiver] &&
+          monitoringState[receiver][sender] &&
+          monitoringState[receiver][sender].active === false
+        ) {
+          const stoppedAt = monitoringState[receiver][sender].stoppedAt;
+          const now = Date.now();
+
+          // ✅ AUTO RESET AFTER 24 HOURS
+          if (now - stoppedAt >= TWENTY_FOUR_HOURS) {
+            monitoringState[receiver][sender].active = true;
+            monitoringState[receiver][sender].stoppedAt = null;
+            console.log("🔄 Auto reset after 24 hours");
+          } else {
+            console.log("⛔ Monitoring stopped for this pair");
+            return; // Skip prediction
+          }
+        }
+
         const predictionResult = await predictHarassment(content);
         if (!predictionResult) return;
 
@@ -131,12 +161,24 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ✅ HANDLE VICTIM RESPONSE (Resend Email API)
+  // ✅ HANDLE VICTIM RESPONSE
   socket.on("victimResponse", async (data) => {
 
     console.log("Victim Response Received:", data);
 
     try {
+
+      // ✅ STOP MONITORING AFTER RESPONSE
+      if (!monitoringState[data.victim]) {
+        monitoringState[data.victim] = {};
+      }
+
+      monitoringState[data.victim][data.predator] = {
+        active: false,
+        stoppedAt: Date.now()
+      };
+
+      harassmentCount[data.victim] = 0;
 
       if (data.response === "YES") {
 
@@ -166,15 +208,31 @@ io.on("connection", (socket) => {
 
         console.log("✅ Email successfully sent using Resend");
 
-        harassmentCount[data.victim] = 0;
-
       } else {
-        console.log("Victim clicked NO — no email sent");
+        console.log("Victim clicked NO — monitoring stopped");
       }
 
     } catch (error) {
       console.error("Resend Email Error:", error.response?.data || error.message);
     }
+  });
+
+  // ✅ RESET MONITORING MANUALLY
+  socket.on("resetMonitoring", (data) => {
+
+    console.log("🔁 Reset requested:", data);
+
+    if (
+      monitoringState[data.victim] &&
+      monitoringState[data.victim][data.predator]
+    ) {
+      monitoringState[data.victim][data.predator].active = true;
+      monitoringState[data.victim][data.predator].stoppedAt = null;
+    }
+
+    harassmentCount[data.victim] = 0;
+
+    console.log("✅ Monitoring resumed manually");
   });
 
   socket.on('disconnect', () => {

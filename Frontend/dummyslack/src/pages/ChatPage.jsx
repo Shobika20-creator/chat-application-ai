@@ -9,15 +9,12 @@ const ChatPage = () => {
   const email = localStorage.getItem("email");
   const friendEmail = localStorage.getItem("friendEmail");
 
-  // ✅ 1️⃣ REGISTER USER WITH BACKEND
   useEffect(() => {
     if (email) {
       socket.emit("registerUser", email);
-      console.log("User registered with socket:", email);
     }
   }, [email]);
 
-  // ✅ 2️⃣ RECEIVE MESSAGES
   useEffect(() => {
     socket.on("receiveMessage", (data) => {
       setChat((prev) => [...prev, data]);
@@ -28,10 +25,8 @@ const ChatPage = () => {
     };
   }, []);
 
-  // ✅ 3️⃣ HARASSMENT ALERT LISTENER
   useEffect(() => {
-    socket.on("harassmentAlert", (data) => {
-      console.log("🚨 Harassment Alert:", data);
+    socket.on("harassmentAlert", () => {
       setShowAlert(true);
     });
 
@@ -40,7 +35,6 @@ const ChatPage = () => {
     };
   }, []);
 
-  // ✅ HANDLE YES RESPONSE
   const handleYes = () => {
     socket.emit("victimResponse", {
       victim: email,
@@ -49,19 +43,17 @@ const ChatPage = () => {
       timestamp: new Date(),
     });
 
-    // Optional: show system message in chat
     setChat((prev) => [
       ...prev,
       {
         sender: "System",
-        content: "You confirmed that you are being harassed. Admin will be notified.",
+        content: "You confirmed harassment. Monitoring paused. Admin notified.",
       },
     ]);
 
     setShowAlert(false);
   };
 
-  // ✅ HANDLE NO RESPONSE
   const handleNo = () => {
     socket.emit("victimResponse", {
       victim: email,
@@ -70,19 +62,32 @@ const ChatPage = () => {
       timestamp: new Date(),
     });
 
-    // Optional: show system message in chat
     setChat((prev) => [
       ...prev,
       {
         sender: "System",
-        content: "You reported that you are NOT being harassed. Monitoring will continue.",
+        content: "You reported NO harassment. Monitoring has been paused.",
       },
     ]);
 
     setShowAlert(false);
   };
 
-  // ✅ SEND MESSAGE
+  const handleResetMonitoring = () => {
+    socket.emit("resetMonitoring", {
+      victim: email,
+      predator: friendEmail,
+    });
+
+    setChat((prev) => [
+      ...prev,
+      {
+        sender: "System",
+        content: "Monitoring has been resumed manually.",
+      },
+    ]);
+  };
+
   const handleSend = () => {
     if (!message.trim()) return;
 
@@ -156,7 +161,17 @@ const ChatPage = () => {
         </button>
       </div>
 
-      {/* ✅ ALERT MODAL */}
+      {/* RESET BUTTON */}
+      <div style={{ textAlign: "center", padding: "10px" }}>
+        <button
+          style={{ ...styles.button, backgroundColor: "#ff9800" }}
+          onClick={handleResetMonitoring}
+        >
+          Reset Monitoring
+        </button>
+      </div>
+
+      {/* ALERT MODAL */}
       {showAlert && (
         <div style={styles.overlay}>
           <div style={styles.popup}>
