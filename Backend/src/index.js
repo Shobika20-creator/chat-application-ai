@@ -13,14 +13,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY;
 
 const harassmentCount = {};
 const onlineUsers = {};
-
-// ✅ NEW: Monitoring Control State
 const monitoringState = {};
-// structure:
-// monitoringState[victim][predator] = {
-//   active: true/false,
-//   stoppedAt: timestamp
-// }
 
 const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
 
@@ -64,26 +57,113 @@ async function predictHarassment(text) {
       "https://shobika04-harassment-api.hf.space/predict",
       { text: text }
     );
-
     console.log("HF Prediction:", response.data);
     return response.data;
-
   } catch (error) {
     console.error("HF API Error:", error.response?.data || error.message);
     return null;
   }
 }
 
+/* ===========================================================
+   ✅ NEW REST API FOR ESP32 (DOES NOT AFFECT FRONTEND)
+   =========================================================== */
+
+app.post("/hardware-message", async (req, res) => {
+  const { sender, receiver, content } = req.body;
+
+  if (!sender || !receiver || !content) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  try {
+    console.log(`📡 Hardware message from ${sender} to ${receiver}`);
+
+    const newMessage = new Message({ sender, receiver, content });
+    await newMessage.save();
+
+    // 🔥 OPTIONAL: Emit to frontend users live
+    io.emit("receiveMessage", { sender, receiver, content });
+
+    // Reuse same harassment logic
+    await handleHarassmentLogic(sender, receiver, content);
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error("Hardware Message Error:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* ===========================================================
+   ✅ SHARED HARASSMENT LOGIC (REUSED)
+   =========================================================== */
+
+async function handleHarassmentLogic(sender, receiver, content) {
+
+  const VICTIM_EMAIL = "a@gmail.com";
+
+  if (receiver !== VICTIM_EMAIL) return;
+
+  if (
+    monitoringState[receiver] &&
+    monitoringState[receiver][sender] &&
+    monitoringState[receiver][sender].active === false
+  ) {
+    const stoppedAt = monitoringState[receiver][sender].stoppedAt;
+    const now = Date.now();
+
+    if (now - stoppedAt >= TWENTY_FOUR_HOURS) {
+      monitoringState[receiver][sender].active = true;
+      monitoringState[receiver][sender].stoppedAt = null;
+    } else {
+      return;
+    }
+  }
+
+  const predictionResult = await predictHarassment(content);
+  if (!predictionResult) return;
+
+  const prediction = predictionResult.prediction;
+
+  const isHarassment =
+    prediction === 1 ||
+    prediction === "1" ||
+    prediction === "Predator";
+
+  if (isHarassment) {
+
+    harassmentCount[receiver] =
+      (harassmentCount[receiver] || 0) + 1;
+
+    if (harassmentCount[receiver] === 5) {
+
+      const victimSocket = onlineUsers[VICTIM_EMAIL];
+
+      if (victimSocket) {
+        io.to(victimSocket).emit("harassmentAlert", {
+          message:
+            "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
+          count: harassmentCount[receiver]
+        });
+      }
+    }
+  }
+}
+
+/* ===========================================================
+   ✅ SOCKET.IO (UNCHANGED FRONTEND SYSTEM)
+   =========================================================== */
+
 io.on("connection", (socket) => {
   console.log(`Socket connected: ${socket.id}`);
 
   socket.on("registerUser", (email) => {
     onlineUsers[email] = socket.id;
-    console.log(`${email} registered with socket ${socket.id}`);
   });
 
   socket.on('sendMessage', async ({ sender, receiver, content }) => {
-    console.log(`Message from ${sender} to ${receiver}: ${content}`);
 
     try {
       const newMessage = new Message({ sender, receiver, content });
@@ -91,99 +171,28 @@ io.on("connection", (socket) => {
 
       socket.broadcast.emit('receiveMessage', { sender, receiver, content });
 
-      const VICTIM_EMAIL = "a@gmail.com";
-
-      if (receiver === VICTIM_EMAIL) {
-
-        // ✅ CHECK MONITORING STATE
-        if (
-          monitoringState[receiver] &&
-          monitoringState[receiver][sender] &&
-          monitoringState[receiver][sender].active === false
-        ) {
-          const stoppedAt = monitoringState[receiver][sender].stoppedAt;
-          const now = Date.now();
-
-          // ✅ AUTO RESET AFTER 24 HOURS
-          if (now - stoppedAt >= TWENTY_FOUR_HOURS) {
-            monitoringState[receiver][sender].active = true;
-            monitoringState[receiver][sender].stoppedAt = null;
-            console.log("🔄 Auto reset after 24 hours");
-          } else {
-            console.log("⛔ Monitoring stopped for this pair");
-            return; // Skip prediction
-          }
-        }
-
-        const predictionResult = await predictHarassment(content);
-        if (!predictionResult) return;
-
-        const prediction = predictionResult.prediction;
-
-        const isHarassment =
-          prediction === 1 ||
-          prediction === "1" ||
-          prediction === "Predator";
-
-        if (isHarassment) {
-
-          harassmentCount[receiver] =
-            (harassmentCount[receiver] || 0) + 1;
-
-          console.log(
-            `Harassment count for ${receiver}:`,
-            harassmentCount[receiver]
-          );
-
-          if (harassmentCount[receiver] === 5) {
-
-            console.log("🚨 5 Harassment messages detected");
-
-            const victimSocket = onlineUsers[VICTIM_EMAIL];
-
-            if (victimSocket) {
-              io.to(victimSocket).emit("harassmentAlert", {
-                message:
-                  "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
-                count: harassmentCount[receiver]
-              });
-
-              console.log("Alert sent to victim");
-            } else {
-              console.log("Victim not online");
-            }
-          }
-        }
-      }
+      await handleHarassmentLogic(sender, receiver, content);
 
     } catch (error) {
       console.error("Message Handling Error:", error.message);
     }
   });
 
-  // ✅ HANDLE VICTIM RESPONSE
   socket.on("victimResponse", async (data) => {
 
-    console.log("Victim Response Received:", data);
+    if (!monitoringState[data.victim]) {
+      monitoringState[data.victim] = {};
+    }
 
-    try {
+    monitoringState[data.victim][data.predator] = {
+      active: false,
+      stoppedAt: Date.now()
+    };
 
-      // ✅ STOP MONITORING AFTER RESPONSE
-      if (!monitoringState[data.victim]) {
-        monitoringState[data.victim] = {};
-      }
+    harassmentCount[data.victim] = 0;
 
-      monitoringState[data.victim][data.predator] = {
-        active: false,
-        stoppedAt: Date.now()
-      };
-
-      harassmentCount[data.victim] = 0;
-
-      if (data.response === "YES") {
-
-        console.log("Sending email via Resend...");
-
+    if (data.response === "YES") {
+      try {
         await axios.post(
           "https://api.resend.com/emails",
           {
@@ -195,7 +204,6 @@ io.on("connection", (socket) => {
               <p><strong>Victim:</strong> ${data.victim}</p>
               <p><strong>Predator:</strong> ${data.predator}</p>
               <p><strong>Time:</strong> ${data.timestamp}</p>
-              <p>The victim has confirmed harassment.</p>
             `,
           },
           {
@@ -205,23 +213,13 @@ io.on("connection", (socket) => {
             },
           }
         );
-
-        console.log("✅ Email successfully sent using Resend");
-
-      } else {
-        console.log("Victim clicked NO — monitoring stopped");
+      } catch (error) {
+        console.error("Resend Email Error:", error.response?.data || error.message);
       }
-
-    } catch (error) {
-      console.error("Resend Email Error:", error.response?.data || error.message);
     }
   });
 
-  // ✅ RESET MONITORING MANUALLY
   socket.on("resetMonitoring", (data) => {
-
-    console.log("🔁 Reset requested:", data);
-
     if (
       monitoringState[data.victim] &&
       monitoringState[data.victim][data.predator]
@@ -231,13 +229,9 @@ io.on("connection", (socket) => {
     }
 
     harassmentCount[data.victim] = 0;
-
-    console.log("✅ Monitoring resumed manually");
   });
 
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
-
     for (const email in onlineUsers) {
       if (onlineUsers[email] === socket.id) {
         delete onlineUsers[email];
