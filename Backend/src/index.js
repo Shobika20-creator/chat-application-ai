@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -50,7 +53,7 @@ app.get("/", (req, res) => {
   res.status(200).send("Backend is live on Render 🚀");
 });
 
-// ✅ Hugging Face Prediction Function
+// ✅ Hugging Face Prediction
 async function predictHarassment(text) {
   try {
     const response = await axios.post(
@@ -66,7 +69,40 @@ async function predictHarassment(text) {
 }
 
 /* ===========================================================
-   ✅ NEW REST API FOR ESP32 (DOES NOT AFFECT FRONTEND)
+   🎤 NEW VOICE INPUT ROUTE (SEPARATE FLOW)
+   =========================================================== */
+
+app.post("/voice-input", async (req, res) => {
+  const { text, victim, intruder } = req.body;
+
+  if (!text || !victim || !intruder) {
+    return res.status(400).json({ error: "Missing fields" });
+  }
+
+  try {
+    console.log("🎤 Voice Input:", text);
+
+    const newMessage = new Message({
+      sender: intruder,
+      receiver: victim,
+      content: text
+    });
+
+    await newMessage.save();
+
+    // 🔥 Pass source = "voice"
+    await handleHarassmentLogic(intruder, victim, text, "voice");
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error("Voice Input Error:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* ===========================================================
+   📡 HARDWARE MESSAGE (UNCHANGED)
    =========================================================== */
 
 app.post("/hardware-message", async (req, res) => {
@@ -82,11 +118,9 @@ app.post("/hardware-message", async (req, res) => {
     const newMessage = new Message({ sender, receiver, content });
     await newMessage.save();
 
-    // 🔥 OPTIONAL: Emit to frontend users live
     io.emit("receiveMessage", { sender, receiver, content });
 
-    // Reuse same harassment logic
-    await handleHarassmentLogic(sender, receiver, content);
+    await handleHarassmentLogic(sender, receiver, content, "chat");
 
     res.json({ success: true });
 
@@ -97,10 +131,10 @@ app.post("/hardware-message", async (req, res) => {
 });
 
 /* ===========================================================
-   ✅ SHARED HARASSMENT LOGIC (REUSED)
+   🧠 SHARED HARASSMENT LOGIC
    =========================================================== */
 
-async function handleHarassmentLogic(sender, receiver, content) {
+async function handleHarassmentLogic(sender, receiver, content, source = "chat") {
 
   const VICTIM_EMAIL = "a@gmail.com";
 
@@ -139,21 +173,43 @@ async function handleHarassmentLogic(sender, receiver, content) {
 
     if (harassmentCount[receiver] === 5) {
 
-      const victimSocket = onlineUsers[VICTIM_EMAIL];
+      // 💬 CHAT FLOW → SOCKET
+      if (source === "chat") {
+        const victimSocket = onlineUsers[VICTIM_EMAIL];
 
-      if (victimSocket) {
-        io.to(victimSocket).emit("harassmentAlert", {
-          message:
-            "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
-          count: harassmentCount[receiver]
-        });
+        if (victimSocket) {
+          io.to(victimSocket).emit("harassmentAlert", {
+            message: "⚠️ Repeated suspicious messages detected. Do you feel unsafe?",
+            count: harassmentCount[receiver]
+          });
+        }
+      }
+
+      // 🎤 VOICE FLOW → SMS
+      if (source === "voice") {
+        await sendSMS(receiver, sender, content);
       }
     }
   }
 }
 
 /* ===========================================================
-   ✅ SOCKET.IO (UNCHANGED FRONTEND SYSTEM)
+   📲 SMS FUNCTION (VOICE ONLY)
+   =========================================================== */
+
+async function sendSMS(victim, intruder, text) {
+  console.log(`
+📲 SMS SENT TO ${victim}
+
+⚠️ Possible harassment detected:
+"${text}"
+
+Reply YES or NO
+  `);
+}
+
+/* ===========================================================
+   🔌 SOCKET.IO (UNCHANGED)
    =========================================================== */
 
 io.on("connection", (socket) => {
@@ -171,7 +227,7 @@ io.on("connection", (socket) => {
 
       socket.broadcast.emit('receiveMessage', { sender, receiver, content });
 
-      await handleHarassmentLogic(sender, receiver, content);
+      await handleHarassmentLogic(sender, receiver, content, "chat");
 
     } catch (error) {
       console.error("Message Handling Error:", error.message);
