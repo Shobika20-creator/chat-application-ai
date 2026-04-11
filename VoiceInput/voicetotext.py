@@ -23,7 +23,7 @@ response = requests.post(
     json={
         "text": text,
         "victim": "a@gmail.com",
-        "intruder": "unknown@intruder.com"
+        "intruder": "b@gmail.com"
     }
 )
 
