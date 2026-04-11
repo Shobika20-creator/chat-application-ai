@@ -62,6 +62,14 @@ app.get("/", (req, res) => {
   res.status(200).send("Backend is live on Render 🚀");
 });
 
+// ✅ Simple Fallback Keywords (If AI fails)
+const FALLBACK_BAD_WORDS = ["idiot", "stupid", "hate", "kill", "harass", "predator", "shut up", "ugly", "useless", "fat", "loser"];
+
+function simpleHarassmentFilter(text) {
+  const lowerText = text.toLowerCase();
+  return FALLBACK_BAD_WORDS.some(word => lowerText.includes(word));
+}
+
 // ✅ Hugging Face Prediction
 async function predictHarassment(text) {
   if (!text || text.trim().length < 3) {
@@ -70,15 +78,30 @@ async function predictHarassment(text) {
   }
 
   try {
+    const HF_URL = "https://api-inference.huggingface.co/models/shobika04/harassment-nlp-model";
     const response = await axios.post(
-      "https://shobika04-harassment-api.hf.space/predict",
-      { text: text }
+      HF_URL,
+      { inputs: text },
+      {
+        headers: { Authorization: `Bearer ${process.env.HF_TOKEN}` },
+        timeout: 5000
+      }
     );
-    console.log("HF Prediction:", response.data);
-    return response.data;
+
+    // 🔥 Robust parsing for Inference API results (often returns [[{label, score}, ...]])
+    const results = Array.isArray(response.data[0]) ? response.data[0] : response.data;
+    const topResult = results[0]; 
+
+    console.log("HF Inference API Result:", topResult);
+    return { prediction: topResult.label };
+
   } catch (error) {
     console.error("HF API Error:", error.response?.data || error.message);
-    return null;
+    
+    // 🔥 FALLBACK: If API is down, use simple keyword check
+    console.log("⚠️ Hugging Face API is down! Falling back to Keyword Filter...");
+    const isBad = simpleHarassmentFilter(text);
+    return { prediction: isBad ? "Predator" : "NonPredator" };
   }
 }
 
@@ -425,7 +448,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on('sendMessage', async ({ sender, receiver, content }) => {
-
+    console.log(`💬 Chat Message: ${sender} -> ${receiver}: "${content}"`);
     try {
       const newMessage = new Message({ sender, receiver, content });
       newMessage.save().catch(err => console.error("DB Save Error:", err.message));

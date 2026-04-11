@@ -56,7 +56,7 @@ def transcription_worker():
                 np.linspace(0, len(raw_audio), len(raw_audio) * 2),
                 np.arange(len(raw_audio)),
                 raw_audio
-            )
+            ).astype(np.float32) # 🚀 FIX: Must be float32 for AI model
             
             # (DEBUG) Save the last clip to a file at 8kHz so you can listen to it
             with wave.open("debug_last.wav", "wb") as wf:
