@@ -214,8 +214,11 @@ async function handleHarassmentLogic(sender, receiver, content, source = "chat")
 
 async function sendSMS(victim, intruder, text) {
   try {
-    // 🔥 Ensure we use the live Render URL for the SMS link
-    const baseUrl = process.env.BASE_URL || "https://chat-application-ai-mh0x.onrender.com";
+    // 🔥 NGrok-Proof Logic: Ignore ngrok links and force the Render URL
+    let baseUrl = process.env.BASE_URL || "https://chat-application-ai-mh0x.onrender.com";
+    if (baseUrl.includes("ngrok")) {
+      baseUrl = "https://chat-application-ai-mh0x.onrender.com";
+    }
     const verifyLink = `${baseUrl}/verify-page?v=${victim}&p=${intruder}`;
 
     console.log(`📤 Twilio: Sending SMS from ${process.env.TWILIO_PHONE_NUMBER} to ${process.env.VICTIM_PHONE_NUMBER}...`);
