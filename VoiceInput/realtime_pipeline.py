@@ -11,7 +11,7 @@ import os
 # --- CONFIGURATION ---
 PORT = "COM11"
 BAUD = 921600   # 🔥 INCREASED FOR 8X FASTER DATA TRANSFER
-BACKEND_URL = "https://chat-application-ai-mh0x.onrender.com/voice-input"
+BACKEND_URL = "http://localhost:5000/voice-input"
 TEMP_FILENAME = "temp_voice.wav"
 
 # --- INITIALIZATION ---
