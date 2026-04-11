@@ -34,14 +34,21 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: [
+    'http://localhost:5173',
+    'https://chat-application-ai-1-ibw1.onrender.com'
+  ],
   credentials: true,
 }));
 
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'https://chat-application-ai-1-ibw1.onrender.com'
+    ],
     methods: ['GET', 'POST'],
+    credentials: true
   },
 });
 
@@ -71,7 +78,7 @@ io.on("connection", (socket) => {
 
       if (receiver === VICTIM_EMAIL) {
 
-        const response = await axios.post("http://localhost:8000/predict", {
+        const response = await axios.post("https://shobika04-harassment-api.hf.space/predict", {
           text: content
         });
 
