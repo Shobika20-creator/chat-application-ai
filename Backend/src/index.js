@@ -168,9 +168,13 @@ async function handleHarassmentLogic(sender, receiver, content, source = "chat")
   }
 
   const predictionResult = await predictHarassment(content);
-  if (!predictionResult) return;
+  if (!predictionResult) {
+    console.log("⚠️ AI Error: No prediction returned for voice.");
+    return;
+  }
 
   const prediction = predictionResult.prediction;
+  console.log(`[AI Diagnosis] Source: ${source}, Text: "${content}", Result: ${prediction}`);
 
   const isHarassment =
     prediction === 1 ||
@@ -178,11 +182,11 @@ async function handleHarassmentLogic(sender, receiver, content, source = "chat")
     prediction === "Predator";
 
   if (isHarassment) {
-
-    harassmentCount[receiver] =
-      (harassmentCount[receiver] || 0) + 1;
+    harassmentCount[receiver] = (harassmentCount[receiver] || 0) + 1;
+    console.log(`🚨 Harassment Detected! Count for ${receiver}: ${harassmentCount[receiver]}`);
 
     if (harassmentCount[receiver] === 3) {
+      console.log("🎯 Limit reached (3). Attempting to trigger alert...");
 
       // 💬 CHAT FLOW → SOCKET
       if (source === "chat") {
@@ -214,11 +218,13 @@ async function sendSMS(victim, intruder, text) {
     const baseUrl = process.env.BASE_URL || "https://chat-application-ai-mh0x.onrender.com";
     const verifyLink = `${baseUrl}/verify-page?v=${victim}&p=${intruder}`;
 
+    console.log(`📤 Twilio: Sending SMS from ${process.env.TWILIO_PHONE_NUMBER} to ${process.env.VICTIM_PHONE_NUMBER}...`);
     const message = await client.messages.create({
-      body: `🚨 Harassment Alert! Open your safety panel to verify: ${verifyLink}`,
+      body: `🚨 Harassment Alert! Open your panel: ${verifyLink}`,
       from: process.env.TWILIO_PHONE_NUMBER,
       to: process.env.VICTIM_PHONE_NUMBER
     });
+    console.log(`✅ SMS SENT! SID: ${message.sid}`);
 
     console.log(`
 📲 REAL SMS SENT TO ${process.env.VICTIM_PHONE_NUMBER}
