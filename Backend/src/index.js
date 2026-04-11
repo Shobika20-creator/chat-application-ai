@@ -147,9 +147,8 @@ app.post("/hardware-message", async (req, res) => {
 
 async function handleHarassmentLogic(sender, receiver, content, source = "chat") {
 
-  const VICTIM_EMAIL = "shobikasaravanan2004@gmail.com";
-
-  if (receiver !== VICTIM_EMAIL) return;
+  const PROTECTED_EMAILS = ["shobikasaravanan2004@gmail.com", "a@gmail.com"];
+  if (!PROTECTED_EMAILS.includes(receiver)) return;
 
   if (
     monitoringState[receiver] &&
@@ -190,7 +189,7 @@ async function handleHarassmentLogic(sender, receiver, content, source = "chat")
 
       // 💬 CHAT FLOW → SOCKET
       if (source === "chat") {
-        const victimSocket = onlineUsers[VICTIM_EMAIL];
+        const victimSocket = onlineUsers[receiver];
 
         if (victimSocket) {
           io.to(victimSocket).emit("harassmentAlert", {
