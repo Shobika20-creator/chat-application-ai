@@ -210,8 +210,9 @@ async function handleHarassmentLogic(sender, receiver, content, source = "chat")
 
 async function sendSMS(victim, intruder, text) {
   try {
-    const shortLink = process.env.BASE_URL.replace("https://", "");
-    const verifyLink = `${shortLink}/verify-page?v=${victim}&p=${intruder}`;
+    // 🔥 Ensure we use the live Render URL for the SMS link
+    const baseUrl = process.env.BASE_URL || "https://chat-application-ai-mh0x.onrender.com";
+    const verifyLink = `${baseUrl}/verify-page?v=${victim}&p=${intruder}`;
 
     const message = await client.messages.create({
       body: `🚨 Harassment Alert! Open your safety panel to verify: ${verifyLink}`,
