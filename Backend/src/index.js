@@ -78,7 +78,7 @@ async function predictHarassment(text) {
   }
 
   try {
-    const HF_URL = "https://api-inference.huggingface.co/models/shobika04/harassment-nlp-model";
+    const HF_URL = "https://router.huggingface.co/hf-inference/models/shobika04/harassment-nlp-model";
     const response = await axios.post(
       HF_URL,
       { inputs: text },
